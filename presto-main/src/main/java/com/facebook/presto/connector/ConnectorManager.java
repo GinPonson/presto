@@ -14,32 +14,15 @@
 package com.facebook.presto.connector;
 
 import com.facebook.presto.connector.informationSchema.InformationSchemaConnector;
-import com.facebook.presto.connector.system.DelegatingSystemTablesProvider;
-import com.facebook.presto.connector.system.MetadataBasedSystemTablesProvider;
-import com.facebook.presto.connector.system.StaticSystemTablesProvider;
-import com.facebook.presto.connector.system.SystemConnector;
-import com.facebook.presto.connector.system.SystemTablesProvider;
+import com.facebook.presto.connector.system.*;
 import com.facebook.presto.index.IndexManager;
-import com.facebook.presto.metadata.Catalog;
-import com.facebook.presto.metadata.CatalogManager;
-import com.facebook.presto.metadata.HandleResolver;
-import com.facebook.presto.metadata.InternalNodeManager;
-import com.facebook.presto.metadata.MetadataManager;
+import com.facebook.presto.metadata.*;
 import com.facebook.presto.security.AccessControlManager;
 import com.facebook.presto.spi.PageIndexerFactory;
 import com.facebook.presto.spi.PageSorter;
 import com.facebook.presto.spi.SystemTable;
 import com.facebook.presto.spi.classloader.ThreadContextClassLoader;
-import com.facebook.presto.spi.connector.Connector;
-import com.facebook.presto.spi.connector.ConnectorAccessControl;
-import com.facebook.presto.spi.connector.ConnectorContext;
-import com.facebook.presto.spi.connector.ConnectorFactory;
-import com.facebook.presto.spi.connector.ConnectorIndexProvider;
-import com.facebook.presto.spi.connector.ConnectorNodePartitioningProvider;
-import com.facebook.presto.spi.connector.ConnectorPageSinkProvider;
-import com.facebook.presto.spi.connector.ConnectorPageSourceProvider;
-import com.facebook.presto.spi.connector.ConnectorRecordSetProvider;
-import com.facebook.presto.spi.connector.ConnectorSplitManager;
+import com.facebook.presto.spi.connector.*;
 import com.facebook.presto.spi.procedure.Procedure;
 import com.facebook.presto.spi.session.PropertyMetadata;
 import com.facebook.presto.spi.type.TypeManager;
@@ -58,7 +41,6 @@ import javax.annotation.PreDestroy;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 import javax.inject.Inject;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -292,6 +274,7 @@ public class ConnectorManager
         metadataManager.getProcedureRegistry().removeProcedures(connectorId);
         accessControlManager.removeCatalogAccessControl(connectorId);
         metadataManager.getTablePropertyManager().removeProperties(connectorId);
+        metadataManager.getColumnPropertyManager().removeProperties(connectorId);
         metadataManager.getSchemaPropertyManager().removeProperties(connectorId);
         metadataManager.getSessionPropertyManager().removeConnectorSessionProperties(connectorId);
 

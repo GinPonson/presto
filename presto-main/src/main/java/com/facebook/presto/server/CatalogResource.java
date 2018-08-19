@@ -15,21 +15,20 @@ package com.facebook.presto.server;
 
 import com.facebook.presto.connector.ConnectorId;
 import com.facebook.presto.connector.ConnectorManager;
-import com.facebook.presto.metadata.InternalNodeManager;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import io.airlift.discovery.client.Announcer;
 import io.airlift.discovery.client.ServiceAnnouncement;
+import io.airlift.log.Logger;
 
 import javax.inject.Inject;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.*;
 
 import static com.google.common.base.Strings.nullToEmpty;
 import static io.airlift.discovery.client.ServiceAnnouncement.serviceAnnouncement;
@@ -42,42 +41,105 @@ import static java.util.Objects.requireNonNull;
 @Path("/v1/catalog")
 public class CatalogResource
 {
+    private static final Logger log = Logger.get(ConnectorManager.class);
+
+    private File catalogConfigurationDir = new File("etc/catalog/");
+
     private final ConnectorManager connectorManager;
     private final Announcer announcer;
 
+    private enum Action {
+        ADD, DELETE
+    }
+
     @Inject
-    public CatalogResource(
-            ConnectorManager connectorManager,
-            Announcer announcer)
+    public CatalogResource(ConnectorManager connectorManager, Announcer announcer)
     {
         this.connectorManager = requireNonNull(connectorManager, "connectorManager is null");
         this.announcer = requireNonNull(announcer, "announcer is null");
     }
 
-    @GET
-    @Path("test")
-    public Response test()
-    {
-        return Response.ok("Hello world").build();
-    }
-
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response createOrUpdateTask(CatalogInfo catalogInfo)
+    public Response createCatalog(CatalogInfo catalogInfo)
     {
         requireNonNull(catalogInfo, "catalogInfo is null");
 
+        dropConnection(catalogInfo.getCatalogName());
+        createConnection(catalogInfo);
+
+        return Response.status(Response.Status.OK).build();
+    }
+
+    @POST
+    @Path("{catalogName}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateCatalog(@PathParam("catalogName") String originCatalog,
+                                  CatalogInfo catalogInfo)
+    {
+        requireNonNull(catalogInfo, "originCatalog is null");
+        requireNonNull(catalogInfo, "catalogInfo is null");
+
+        dropConnection(originCatalog);
+        dropConnection(catalogInfo.getCatalogName());
+        createConnection(catalogInfo);
+
+        return Response.status(Response.Status.OK).build();
+    }
+
+    @DELETE
+    @Path("{catalogName}")
+    public void deleteCatalog(@PathParam("catalogName") String catalogName)
+    {
+        requireNonNull(catalogName, "catalogName is null");
+
+        dropConnection(catalogName);
+    }
+
+    private void createConnection(CatalogInfo catalogInfo)
+    {
         ConnectorId connectorId = connectorManager.createConnection(
                 catalogInfo.getCatalogName(),
                 catalogInfo.getConnectorName(),
                 catalogInfo.getProperties());
 
-        updateConnectorIdAnnouncement(announcer, connectorId);
-        return Response.status(Response.Status.OK).build();
+        updateConnectorIdAnnouncement(announcer, connectorId, Action.ADD);
+        createPropertiesFile(catalogInfo);
     }
 
-    private static void updateConnectorIdAnnouncement(Announcer announcer, ConnectorId connectorId)
+    private void dropConnection(String catalogName)
+    {
+        connectorManager.dropConnection(catalogName);
+
+        updateConnectorIdAnnouncement(announcer, new ConnectorId(catalogName), Action.DELETE);
+        deletePropertiesFile(catalogName);
+    }
+
+    private void createPropertiesFile(CatalogInfo catalogInfo)
+    {
+        Properties properties = new Properties();
+        properties.setProperty("connector.name", catalogInfo.getConnectorName());
+        properties.putAll(catalogInfo.getProperties());
+        String fileName = catalogConfigurationDir.getPath() + File.separator
+                + catalogInfo.getCatalogName() + ".properties";
+        try (FileWriter fileWriter = new FileWriter(fileName)){
+            properties.store(fileWriter, "");
+        } catch (IOException e) {
+            log.error(e, e.getMessage());
+        }
+    }
+
+    private void deletePropertiesFile(String catalogName)
+    {
+        String fileName = catalogConfigurationDir.getPath() + File.separator
+                + catalogName + ".properties";
+        File properties = new File(fileName);
+        properties.delete();
+    }
+
+    private static void updateConnectorIdAnnouncement(Announcer announcer, ConnectorId connectorId, Action action)
     {
         //
         // This code was copied from PrestoServer, and is a hack that should be removed when the connectorId property is removed
@@ -90,7 +152,12 @@ public class CatalogResource
         Map<String, String> properties = new LinkedHashMap<>(announcement.getProperties());
         String property = nullToEmpty(properties.get("connectorIds"));
         Set<String> connectorIds = new LinkedHashSet<>(Splitter.on(',').trimResults().omitEmptyStrings().splitToList(property));
-        connectorIds.add(connectorId.toString());
+        if (action.equals(Action.ADD)) {
+            connectorIds.add(connectorId.toString());
+        }
+        if (action.equals(Action.DELETE)) {
+            connectorIds.remove(connectorId.toString());
+        }
         properties.put("connectorIds", Joiner.on(',').join(connectorIds));
 
         // update announcement
@@ -108,4 +175,5 @@ public class CatalogResource
         }
         throw new RuntimeException("Presto announcement not found: " + announcements);
     }
+
 }
