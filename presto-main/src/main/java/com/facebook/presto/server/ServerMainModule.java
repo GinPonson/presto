@@ -505,6 +505,9 @@ public class ServerMainModule
 
         // cleanup
         binder.bind(ExecutorCleanup.class).in(Scopes.SINGLETON);
+
+        // Catalogs
+        jaxrsBinder(binder).bind(CatalogResource.class);
     }
 
     @Provides
